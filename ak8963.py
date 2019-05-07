@@ -28,10 +28,11 @@ MicroPython I2C driver for AK8963 magnetometer
 __version__ = "0.2.1"
 
 # pylint: disable=import-error
-import ustruct
-import utime
-from machine import I2C, Pin
+import struct
+import time
 from micropython import const
+
+from adafruit_bus_device.i2c_device import I2CDevice
 # pylint: enable=import-error
 
 _WIA = const(0x00)
@@ -69,6 +70,7 @@ class AK8963:
         offset=(0, 0, 0), scale=(1, 1, 1)
     ):
         self.i2c = i2c
+        self.device = I2CDevice(i2c, address)
         self.address = address
         self._offset = offset
         self._scale = scale
@@ -148,7 +150,7 @@ class AK8963:
         minz = maxz = reading[2]
 
         while count:
-            utime.sleep_ms(delay)
+            time.sleep(delay / 1000)
             reading = self.magnetic
             minx = min(minx, reading[0])
             maxx = max(maxx, reading[0])
@@ -182,23 +184,28 @@ class AK8963:
 
     def _register_short(self, register, value=None, buf=bytearray(2)):
         if value is None:
-            self.i2c.readfrom_mem_into(self.address, register, buf)
-            return ustruct.unpack("<h", buf)[0]
+            with self.device as bd:
+                bd.write_then_readinto(bytearray([register]), buf)
+            return struct.unpack("<h", buf)[0]
 
-        ustruct.pack_into("<h", buf, 0, value)
-        return self.i2c.writeto_mem(self.address, register, buf)
+        struct.pack_into("<h", buf, 0, value)
+        with self.device as bd:
+            return bd.write(bytearray(register) + buf)
 
     def _register_three_shorts(self, register, buf=bytearray(6)):
-        self.i2c.readfrom_mem_into(self.address, register, buf)
-        return ustruct.unpack("<hhh", buf)
+        with self.device as bd:
+            bd.write_then_readinto(bytearray([register]), buf)
+        return struct.unpack("<hhh", buf)
 
     def _register_char(self, register, value=None, buf=bytearray(1)):
         if value is None:
-            self.i2c.readfrom_mem_into(self.address, register, buf)
+            with self.device as bd:
+                bd.write_then_readinto(bytearray([register]), buf)
             return buf[0]
 
-        ustruct.pack_into("<b", buf, 0, value)
-        return self.i2c.writeto_mem(self.address, register, buf)
+        struct.pack_into("<b", buf, 0, value)
+        with self.device as bd:
+            return bd.write(bytearray([register]) + buf)
 
     def __enter__(self):
         return self
